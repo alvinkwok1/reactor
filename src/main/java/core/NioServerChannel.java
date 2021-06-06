@@ -1,9 +1,10 @@
+package core;
+
 import java.io.IOException;
 import java.nio.channels.SelectableChannel;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.spi.SelectorProvider;
-
-public class NioServerHandler extends AbstractNioHandle{
+public class NioServerChannel extends AbstractNioChannel {
 
     private static ServerSocketChannel newSocket(){
         try {
@@ -13,11 +14,11 @@ public class NioServerHandler extends AbstractNioHandle{
         }
     }
 
-    public NioServerHandler() {
+    public NioServerChannel() {
         this(newSocket());
     }
 
-    public NioServerHandler(SelectableChannel channel) {
+    public NioServerChannel(SelectableChannel channel) {
         super(channel);
     }
 
@@ -32,9 +33,9 @@ public class NioServerHandler extends AbstractNioHandle{
         try {
             SelectableChannel socketChannel = serverChannel.accept();
             socketChannel.configureBlocking(false);
-            Handle handle = new NioHandle(socketChannel);
+            Channel channel = new NioChannel(socketChannel);
             // 调用处理逻辑
-            eventHandler.handleRead(this,handle);
+            eventHandler.handleRead(this, channel);
         } catch (IOException e) {
             // 触发channel的异常事件
         }
@@ -44,5 +45,6 @@ public class NioServerHandler extends AbstractNioHandle{
     public boolean isActive() {
         return isOpen() && javaChannel().socket().isBound();
     }
+
 
 }

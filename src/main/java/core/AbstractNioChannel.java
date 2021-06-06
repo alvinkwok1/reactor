@@ -1,3 +1,4 @@
+package core;
 
 import java.io.IOException;
 import java.net.SocketAddress;
@@ -8,7 +9,7 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.util.logging.Logger;
 
-public class AbstractNioHandle implements Handle {
+public class AbstractNioChannel implements Channel {
 
     private Logger logger = Logger.getLogger(this.getClass().getName());
 
@@ -18,15 +19,19 @@ public class AbstractNioHandle implements Handle {
 
     protected SelectionKey selectionKey;
 
-    private EventLoop eventLoop;
+    protected EventLoop eventLoop;
+
+    protected ChannelPromise connectPromise;
+
+    protected ChannelPromise closePromise = newPromise();
 
     protected ByteBuffer rcvBuffer = ByteBuffer.allocate(1024);
     protected ByteBuffer wrBuffer = ByteBuffer.allocate(1024);
 
-    public AbstractNioHandle() {
+    public AbstractNioChannel() {
     }
 
-    public AbstractNioHandle(SelectableChannel channel) {
+    public AbstractNioChannel(SelectableChannel channel) {
         try {
             this.channel = channel;
             this.channel.configureBlocking(false);
@@ -41,7 +46,15 @@ public class AbstractNioHandle implements Handle {
     @Override
     public void read() {
         // 读取数据，触发事件
-        doRead();
+        if (!isActive()) {
+            return;
+        }
+        try {
+            doRead();
+        }catch (final Exception e) {
+            eventHandler.handleException(this,e);
+            close();
+        }
     }
 
     /**
@@ -50,8 +63,8 @@ public class AbstractNioHandle implements Handle {
      * @param data
      */
     @Override
-    public void write(byte[] data) {
-
+    public ChannelFuture write(byte[] data) {
+        return null;
     }
 
     /**
@@ -66,27 +79,33 @@ public class AbstractNioHandle implements Handle {
      * 建立连接
      */
     @Override
-    public void connect(SocketAddress socketAddress) {
-        if (eventLoop.inEventLoop(Thread.currentThread())){
-            doConnect(socketAddress);
+    public ChannelFuture connect(SocketAddress socketAddress,ChannelPromise channelPromise) {
+        if (eventLoop.inEventLoop()){
+            doConnect(socketAddress,channelPromise);
         } else {
-            eventLoop.execute(()->doConnect(socketAddress));
+            eventLoop.execute(()->doConnect(socketAddress,channelPromise));
         }
+        return channelPromise;
     }
 
-    protected void doConnect(SocketAddress socketAddress) {
+    protected void doConnect(SocketAddress socketAddress,ChannelPromise promise) {
         try {
             SocketChannel socketChannel = (SocketChannel) this.channel;
+            this.connectPromise = promise;
             // 进行连接
             socketChannel.configureBlocking(false);
-            socketChannel.connect(socketAddress);
+            boolean connected = socketChannel.connect(socketAddress);
             // 注册连接事件
             socketChannel.register(eventLoop.selector(), SelectionKey.OP_CONNECT, this);
-            if (isActive()) {
-                eventHandler.handleInActive(this);
+            if (connected) {
+                if (isActive()) {
+                    // 通知已经连接建立成功
+                    promise.setSuccess();
+                    eventHandler.handleInActive(this);
+                }
             }
         }catch (Exception e) {
-            eventHandler.handleException(this,e);
+            promise.setFailure(e);
         }
     }
 
@@ -102,20 +121,26 @@ public class AbstractNioHandle implements Handle {
      * 关闭连接
      */
     @Override
-    public void close() {
+    public ChannelPromise close() {
        if (eventLoop.inEventLoop(Thread.currentThread())) {
-           doClose();
+           doClose(closePromise);
        } else {
-           eventLoop().execute(()->doClose());
+           eventLoop().execute(()->doClose(closePromise));
        }
+       return closePromise;
     }
 
-    public void doClose() {
+    @Override
+    public ChannelFuture closeFuture() {
+        return closePromise;
+    }
+
+    public void doClose(ChannelPromise promise) {
         try {
             javaChannel().close();
             eventHandler.handleUnActive(this);
-            // 将channel取消注册
-            eventLoop().cancel(selectionKey);
+            // 触发解除注册
+            deRegister(promise);
         } catch (IOException e) {
             eventHandler.handleException(this, e);
         }
@@ -125,16 +150,12 @@ public class AbstractNioHandle implements Handle {
      * bind端口
      */
     @Override
-    public void bind(SocketAddress localAddress) throws IOException {
-        if (eventLoop.inEventLoop(Thread.currentThread())) {
-            doBind(localAddress);
-        } else {
-            eventLoop.execute(() -> doBind(localAddress));
-        }
-
+    public ChannelFuture bind(SocketAddress localAddress,ChannelPromise promise) {
+        doBind(localAddress,promise);
+        return promise;
     }
 
-    protected void doBind(SocketAddress localAddress) {
+    protected void doBind(SocketAddress localAddress,ChannelPromise promise) {
         ServerSocketChannel serverSocketChannel = (ServerSocketChannel) this.channel;
         try {
             serverSocketChannel.configureBlocking(false);
@@ -143,7 +164,7 @@ public class AbstractNioHandle implements Handle {
             // 注册接受事件
             channel.register(eventLoop.selector(), SelectionKey.OP_ACCEPT, this);
         } catch (IOException e) {
-            eventHandler.handleException(this, e);
+            promise.setFailure(e);
         }
     }
 
@@ -158,22 +179,51 @@ public class AbstractNioHandle implements Handle {
      * @param eventLoop
      */
     @Override
-    public void register(EventLoop eventLoop) {
-        this.eventLoop = eventLoop;
-        doRegister();
-        if (isActive()) {
-            eventHandler.handleInActive(this);
+    public void register(EventLoop eventLoop,ChannelPromise promise) {
+        if (eventLoop.inEventLoop()) {
+            doRegister(eventLoop,promise);
+        } else {
+            eventLoop.execute(()->doRegister(eventLoop,promise));
         }
     }
 
-    protected void doRegister() {
+
+
+    protected void doRegister(EventLoop eventLoop,ChannelPromise promise) {
+        try {
+            this.eventLoop = eventLoop;
+            promise.setSuccess(null);
+        } catch (Exception e) {
+            promise.setFailure(e);
+        }
     }
 
+    @Override
+    public void deRegister(ChannelPromise promise) {
+        if (inEventLoop()) {
+            doDeRegister(promise);
+        } else {
+            eventLoop.execute(()->{
+                doDeRegister(promise);
+            });
+        }
+    }
+
+    public void doDeRegister(ChannelPromise promise) {
+        try {
+            // 将channel取消注册
+            eventLoop().cancel(selectionKey);
+            promise.setSuccess();
+        }catch (Throwable e) {
+            promise.setFailure(e);
+        }
+    }
     protected SelectableChannel javaChannel() {
         return channel;
     }
 
     protected void doRead() {
+
     }
 
     @Override
@@ -200,4 +250,9 @@ public class AbstractNioHandle implements Handle {
     public boolean inEventLoop() {
         return eventLoop.inEventLoop(Thread.currentThread());
     }
+
+    public final ChannelPromise newPromise() {
+        return new DefaultChannelPromise(this);
+    }
+
 }

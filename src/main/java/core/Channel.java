@@ -1,7 +1,9 @@
+package core;
+
 import java.io.IOException;
 import java.net.SocketAddress;
 
-public interface Handle {
+public interface Channel {
     /**
      * 触发读事件
      */
@@ -10,7 +12,7 @@ public interface Handle {
     /**
      * 写数据
      */
-    void write(byte[] data);
+    ChannelFuture write(byte[] data);
 
     /**
      * 刷出数据
@@ -20,7 +22,7 @@ public interface Handle {
     /**
      * 建立连接
      */
-    void connect(SocketAddress socketAddress) throws IOException;
+    ChannelFuture connect(SocketAddress socketAddress,ChannelPromise promise);
 
     /**
      * 建立连接结束后的操作流程
@@ -30,21 +32,27 @@ public interface Handle {
     /**
      * 关闭连接
      */
-    void close();
+    ChannelFuture close();
+
+    /**
+     * 用于返回关闭连接的closeFuture
+     * @return
+     */
+    ChannelFuture closeFuture();
 
     /**
      * bind端口
      */
-    void bind(SocketAddress localAddress) throws IOException;
+    ChannelFuture bind(SocketAddress localAddress,ChannelPromise promise);
 
     EventLoop eventLoop();
-
-    boolean inEventLoop();
 
     /**
      * 将当前的资源注册到eventLoop上
      */
-    void register(EventLoop eventLoop);
+    void register(EventLoop eventLoop,ChannelPromise promise);
+
+    void deRegister(ChannelPromise promise);
 
     boolean isActive();
 
@@ -56,4 +64,5 @@ public interface Handle {
      */
     void eventHandler(EventHandler eventHandler);
 
+    boolean inEventLoop();
 }

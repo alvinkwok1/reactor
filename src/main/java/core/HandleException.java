@@ -1,3 +1,5 @@
+package core;
+
 public class HandleException extends RuntimeException {
     /**
      * Constructs a new runtime exception with {@code null} as its

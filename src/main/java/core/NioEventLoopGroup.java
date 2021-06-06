@@ -1,13 +1,27 @@
+package core;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
-public class NioEventLoopGroup {
+public class NioEventLoopGroup implements EventGroup {
     List<NioEventLoop> dispatchers;
     List<Thread> threads;
 
-    public void run(int size) {
+    private AtomicInteger inc = new AtomicInteger(10);
+
+    private int size;
+
+
+    public NioEventLoopGroup(int size) {
+        this.size = size;
+        run();
+    }
+
+    public void run() {
         // 初始化Dispatcher
         dispatchers = new ArrayList<>(size);
         threads = new ArrayList<>(size);
@@ -27,11 +41,14 @@ public class NioEventLoopGroup {
         }
     }
 
-    void register(Handle handle) {
+    public ChannelFuture register(Channel channel) {
+        return register(new DefaultChannelPromise(channel));
+    }
+
+    private ChannelFuture register(final DefaultChannelPromise promise) {
         // 选择一个dispatcher然后注册
-        Random random = new Random();
-        int idx = random.nextInt(dispatchers.size());
-        dispatchers.get(idx).register(handle);
+        int idx = Math.abs(inc.incrementAndGet()) % size;
+        return dispatchers.get(idx).register(promise);
     }
 
     public void waitDown(){
@@ -42,6 +59,13 @@ public class NioEventLoopGroup {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
+        }
+    }
+
+    @Override
+    public void shutdown() {
+        for (int i=0;i<size;i++) {
+            dispatchers.get(i).shutdown();
         }
     }
 }

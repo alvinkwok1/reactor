@@ -1,3 +1,5 @@
+package core;
+
 import java.io.IOException;
 import java.nio.channels.*;
 import java.util.Iterator;
@@ -11,6 +13,8 @@ public class NioEventLoop implements EventLoop {
     private final NioEventLoopGroup group;
 
     private final Thread thread;
+
+    private volatile  boolean shutdown=false;
 
     /**
      * 用于事件循环的selector
@@ -36,33 +40,36 @@ public class NioEventLoop implements EventLoop {
         int selectCnt = 0;
         for (; ; ) {
             try {
+                if (shutdown) {
+                    break;
+                }
                 if (!hasTask()) {
-                    selectCnt = selector.select(100);
+                    selectCnt = selector.select();
                 }
                 if (selectCnt > 0) {
                     Iterator<SelectionKey> iterator = selector.selectedKeys().iterator();
                     while (iterator.hasNext()) {
                         SelectionKey selectionKey = iterator.next();
                         iterator.remove();
-                        Handle mainHandle = (Handle) selectionKey.attachment();
+                        Channel channel = (Channel) selectionKey.attachment();
                         // 获取对应的Channel
                         if (selectionKey.isAcceptable()) {
                             // 触发接受事件
                             // 创建新的socket，然后加入到，从组中选择一个Dispatcher注册
-                            mainHandle.read();
+                            channel.read();
                             // 触发read事件
                         } else if (selectionKey.isReadable()) {
                             // 触发读事件
-                            mainHandle.read();
+                            channel.read();
                         } else if (selectionKey.isWritable()) {
                             // 触发写事件,刷出缓冲区数据
                             // 触发读事件
-                            mainHandle.flush();
+                            channel.flush();
                         } else if (selectionKey.isConnectable()) {
                             int ops = selectionKey.interestOps();
                             ops &= ~SelectionKey.OP_CONNECT;
                             selectionKey.interestOps(ops);
-                            mainHandle.finishConnect();
+                            channel.finishConnect();
                         }
                     }
                 }
@@ -80,10 +87,10 @@ public class NioEventLoop implements EventLoop {
     }
 
     @Override
-    public boolean register(Handle handle) {
+    public ChannelFuture register(ChannelPromise promise) {
         // 绑定handle的eventLoop,同时注册感兴趣的事件
-        handle.register(this);
-        return true;
+        promise.channel().register(this,promise);
+        return promise;
     }
 
     /**
@@ -120,5 +127,10 @@ public class NioEventLoop implements EventLoop {
     @Override
     public boolean inEventLoop(Thread thread) {
         return thread == this.thread;
+    }
+
+    @Override
+    public void shutdown() {
+        this.shutdown = true;
     }
 }
