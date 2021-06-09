@@ -1,6 +1,7 @@
 package example;
 
 import java.io.IOException;
+import java.nio.channels.SelectionKey;
 
 public class LoggingAcceptor implements EventHandler {
 
@@ -11,13 +12,18 @@ public class LoggingAcceptor implements EventHandler {
     }
 
     @Override
-    public void handle_event(EventType eventType) {
-        // accept new connection
-        try {
-            Handle childHandle = handle.accept();
-
-        } catch (IOException e) {
-            e.printStackTrace();
+    public void handle_event(int readyOps) {
+        if ((readyOps & SelectionKey.OP_ACCEPT) != 0) {
+            try {
+                // accept new connection
+                Handle childHandle = handle.accept();
+                // create new Event Handler
+                EventHandler eventHandler = new LoggingHandler(childHandle);
+                // register to Initiation Dispatcher
+                InitiationDispatcher.getInstance().register_handler(eventHandler,SelectionKey.OP_READ);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 

@@ -6,67 +6,38 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.util.Iterator;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class InitiationDispatcher {
 
-    Selector selector = Selector.open();
+    private Selector selector;
 
-    private static final AtomicInteger inc = new AtomicInteger();
+    private static InitiationDispatcher self = new InitiationDispatcher();
 
-    /**
-     * public class part
-     */
-    private static InitiationDispatcher[] dispatchers;
-
-    private static Thread[] threads;
-
-    public static void init(int size) throws IOException {
-        if (size < 1)
-            throw new IllegalArgumentException();
-        dispatchers = new InitiationDispatcher[size];
-        for (int i = 0; i < size; i++) {
-            dispatchers[i] = new InitiationDispatcher();
-        }
-        threads = new Thread[size];
-        for (int i = 0; i < size; i++) {
-            int idx = i;
-            threads[idx] = new Thread(() -> dispatchers[idx].handle_events());
-        }
+    private InitiationDispatcher() {
     }
 
-    public static void start() {
-        if (threads.length == 1) {
-            // current start
-            threads[0].run();
-        } else {
-            for (int i = 0; i < threads.length; i++) {
-                threads[i].start();
-            }
-        }
+    public static InitiationDispatcher getInstance() {
+        return self;
     }
 
-
-    public InitiationDispatcher() throws IOException {
-
-    }
-
-    void handle_events() {
+    void handle_events() throws IOException {
+        // open selector
+        openSelector();
+        // do event loop
         for (; ; ) {
             try {
+                // wait event occur
                 if (selector.select() > 0) {
+                    // get notified handle
                     Set<SelectionKey> keys = selector.selectedKeys();
                     Iterator<SelectionKey> iterator = keys.iterator();
+                    // for handle
                     while (iterator.hasNext()) {
                         SelectionKey key = iterator.next();
                         iterator.remove();
+                        // callback Event Handler
                         EventHandler handler = (EventHandler) key.attachment();
-                        if (key.isReadable()) {
-                            handler.handle_event(EventType.OP_READ);
-                        } else if (key.isAcceptable()) {
-                            handler.handle_event(EventType.OP_ACCEPT);
-                        }
+                        handler.handle_event(key.readyOps());
                     }
                 }
             } catch (Throwable e) {
@@ -75,21 +46,21 @@ public class InitiationDispatcher {
         }
     }
 
-    public static boolean register_handler(EventHandler eventHandler, int ops) {
-        Selector selector = next().selector();
-        try {
-            eventHandler.get_handle().register(selector, SelectionKey.OP_ACCEPT);
-            return true;
-        } catch (ClosedChannelException e) {
-            e.printStackTrace();
-            return false;
-        }
+    // register Event Handler to dispatcher
+    public boolean register_handler(EventHandler eventHandler, int ops) throws IOException {
+        openSelector();
+        eventHandler.get_handle().register(selector(), ops, eventHandler);
+        return true;
+
     }
 
-    public static boolean remove_handler(EventHandler eventHandler, int ops) {
-        Selector selector = next().selector();
+    // remove Event Handler  from dispatcher
+    public boolean remove_handler(EventHandler eventHandler, int ops) {
+        if (selector == null) {
+            return false;
+        }
         try {
-            eventHandler.get_handle().unRegister(selector);
+            eventHandler.get_handle().unRegister(selector());
             return true;
         } catch (Throwable e) {
             e.printStackTrace();
@@ -97,12 +68,17 @@ public class InitiationDispatcher {
         }
     }
 
-    public Selector selector() {
+    private Selector selector() {
         return selector;
     }
 
-    public static InitiationDispatcher next() {
-        int idx = Math.abs(inc.incrementAndGet()) % dispatchers.length;
-        return dispatchers[idx];
+    private void openSelector() throws IOException {
+        if (selector == null || !selector.isOpen()) {
+            // close old selector
+            if (selector != null) {
+                selector.close();
+            }
+            selector = Selector.open();
+        }
     }
 }

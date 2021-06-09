@@ -9,7 +9,7 @@ public class Client {
     public static void main(String[] args) throws InterruptedException {
 
 
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < 1; i++) {
             new Thread(() -> {
                 BootStrap sb = new BootStrap();
 

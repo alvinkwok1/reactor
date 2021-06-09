@@ -11,7 +11,7 @@ public class ServerBootStrap {
 
     private EventGroup workerGroup;
 
-    private EventHandler bossHandler;
+    private InitialEventHandler bossHandler;
 
     private InitialEventHandler childHandler;
 
@@ -24,6 +24,14 @@ public class ServerBootStrap {
         this.workerGroup = workerGroup;
         return self();
     }
+
+
+
+    public ServerBootStrap handler(InitialEventHandler initialEventHandler) {
+        this.bossHandler = initialEventHandler;
+        return this;
+    }
+
 
     public ServerBootStrap childHandler(InitialEventHandler initialEventHandler) {
         this.childHandler = initialEventHandler;
@@ -38,7 +46,30 @@ public class ServerBootStrap {
         // 初始化Channel
         // 初始化一个服务端监听器
         NioServerChannel nioServerChannel = new NioServerChannel();
-        nioServerChannel.eventHandler(childHandler.getEventHandler());
+        nioServerChannel.eventHandler(new EventHandler() {
+                @Override
+                public void handleRead(Channel channel, Object data) {
+                    // 完成注册
+                    Channel childChannel = (Channel) data;
+                    childChannel.eventHandler(childHandler.getEventHandler());
+                    workerGroup.register(childChannel);
+                }
+
+                @Override
+                public void handleException(Channel channel, Throwable e) {
+                    e.printStackTrace();
+                }
+
+                @Override
+                public void handleUnActive(Channel channel) {
+
+                }
+
+                @Override
+                public void handleInActive(Channel channel) {
+
+                }
+        });
         // 注册到组
         ChannelFuture regFuture = bossGroup.register(nioServerChannel);
         if (regFuture.cause() != null) {
