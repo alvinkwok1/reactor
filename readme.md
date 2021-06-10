@@ -2,6 +2,7 @@
 
 ## 简介
 该项目是我在学习netty过程中所产生的，主要包含两个部分，一个部分是netty的简单实现，一个是reactor模型单线程版本的demo代码。
+参考文章：https://alvinkwok.cn/2021/06/06/design_pattern/reactor%E6%A8%A1%E5%9E%8B/
 
 ## 组成结构
 - 在bootstrap和core下面是一份简单的netty实现
